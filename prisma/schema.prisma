@@ -1,0 +1,214 @@
+// Prisma schema for BioSeal: Condition-Based Physical Escrow on NEAR
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  OPERATOR
+  AUDITOR
+}
+
+enum EscrowStatus {
+  DRAFT
+  AWAITING_FUNDING
+  ACTIVE
+  CONDITION_MET
+  CONDITION_VIOLATED
+  INCONCLUSIVE
+  SETTLED
+  CANCELLED
+  EXPIRED
+}
+
+enum PrivacyLevel {
+  STANDARD
+  STRICT
+}
+
+enum IndicatorType {
+  TEMPERATURE
+  HUMIDITY
+  TAMPER
+  SHOCK
+  UV
+  BIOCHEMICAL
+  CUSTOM
+}
+
+enum VerificationStatus {
+  PENDING
+  PROCESSING
+  VERIFIED
+  FAILED
+  EXPIRED
+}
+
+enum ClassificationOutcome {
+  CONDITION_MET
+  CONDITION_VIOLATED
+  INCONCLUSIVE
+}
+
+enum SettlementStatus {
+  PENDING
+  QUOTED
+  SIGNING
+  SUBMITTED
+  SETTLED
+  FAILED
+  REFUNDED
+}
+
+model User {
+  id                     String    @id @default(uuid())
+  near_account_id        String?   @unique
+  external_wallet_address String?
+  display_name           String?
+  email_hash             String?
+  role                   UserRole  @default(USER)
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  created_escrows        Escrow[]              @relation("EscrowCreator")
+  verifications          VerificationSession[] @relation("VerifierUser")
+  audit_events           AuditEvent[]          @relation("ActorAudit")
+
+  @@map("users")
+}
+
+model Escrow {
+  id                     String         @id @default(uuid())
+  public_id              String         @unique
+  creator_id             String
+  sender_account         String
+  recipient_account      String
+  claim_recipient_account String?
+  asset_symbol           String
+  asset_amount           Decimal        @db.Decimal(28, 8)
+  currency               String
+  deadline               DateTime
+  status                 EscrowStatus   @default(AWAITING_FUNDING)
+  policy_hash            String
+  privacy_level          PrivacyLevel   @default(STANDARD)
+  media_retention_days   Int            @default(30)
+  created_at             DateTime       @default(now())
+  updated_at             DateTime       @updatedAt
+
+  creator                User           @relation("EscrowCreator", fields: [creator_id], references: [id])
+  indicators             Indicator[]
+  verification_sessions  VerificationSession[]
+  settlement_policy      SettlementPolicy?
+  settlements            Settlement[]
+  audit_events           AuditEvent[]
+
+  @@index([status])
+  @@index([creator_id])
+  @@index([deadline])
+  @@map("escrows")
+}
+
+model Indicator {
+  id             String        @id @default(uuid())
+  escrow_id      String
+  indicator_type IndicatorType
+  manufacturer   String?
+  batch_reference String?
+  expected_state String
+  failure_state  String
+  binding_hash   String
+  registered_at  DateTime      @default(now())
+
+  escrow         Escrow        @relation(fields: [escrow_id], references: [id], onDelete: Cascade)
+  verification_sessions VerificationSession[]
+
+  @@index([escrow_id])
+  @@map("indicators")
+}
+
+model VerificationSession {
+  id                           String                 @id @default(uuid())
+  escrow_id                    String
+  indicator_id                 String
+  verifier_user_id             String?
+  status                       VerificationStatus     @default(PENDING)
+  image_storage_key            String
+  image_hash                   String
+  model_id                     String
+  attestation_reference        String
+  response_signature_reference String
+  classification               ClassificationOutcome?
+  confidence                   Decimal?               @db.Decimal(5, 4)
+  created_at                   DateTime               @default(now())
+  completed_at                 DateTime?
+
+  escrow                       Escrow                 @relation(fields: [escrow_id], references: [id], onDelete: Cascade)
+  indicator                    Indicator              @relation(fields: [indicator_id], references: [id])
+  verifier                     User?                  @relation("VerifierUser", fields: [verifier_user_id], references: [id])
+  settlements                  Settlement[]
+
+  @@index([escrow_id])
+  @@index([indicator_id])
+  @@map("verification_sessions")
+}
+
+model SettlementPolicy {
+  id                     String   @id @default(uuid())
+  escrow_id              String   @unique
+  on_condition_met       Json
+  on_condition_violated   Json
+  on_inconclusive        Json
+  on_expiry              Json
+  requires_manual_review Boolean  @default(false)
+  created_at             DateTime @default(now())
+
+  escrow                 Escrow   @relation(fields: [escrow_id], references: [id], onDelete: Cascade)
+
+  @@map("settlement_policies")
+}
+
+model Settlement {
+  id                      String           @id @default(uuid())
+  escrow_id               String
+  verification_session_id String?
+  status                  SettlementStatus @default(PENDING)
+  destination_chain       String
+  destination_account     String
+  asset_symbol            String
+  asset_amount            Decimal          @db.Decimal(28, 8)
+  intent_reference        String?
+  transaction_reference   String?
+  created_at              DateTime         @default(now())
+  completed_at            DateTime?
+
+  escrow                  Escrow           @relation(fields: [escrow_id], references: [id], onDelete: Cascade)
+  verification_session    VerificationSession? @relation(fields: [verification_session_id], references: [id])
+
+  @@index([escrow_id])
+  @@map("settlements")
+}
+
+model AuditEvent {
+  id         String   @id @default(uuid())
+  actor_id   String?
+  escrow_id  String?
+  event_type String
+  metadata   Json
+  ip_hash    String?
+  created_at DateTime @default(now())
+
+  actor      User?    @relation("ActorAudit", fields: [actor_id], references: [id])
+  escrow     Escrow?  @relation(fields: [escrow_id], references: [id], onDelete: Cascade)
+
+  @@index([escrow_id])
+  @@index([event_type])
+  @@index([created_at])
+  @@map("audit_events")
+}
