@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #FAF7F1;
+  --surface: #FFFFFF;
+  --surface-soft: #F4EFE7;
+  --ink-primary: #161513;
+  --ink-secondary: #5F5B54;
+  --border: #E5DFD4;
+  --primary: #0F766E;
+}
+
+@layer base {
+  body {
+    background-color: var(--background);
+    color: var(--ink-primary);
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* Reduced transparency fallback */
+@media (prefers-reduced-transparency: reduce) {
+  .backdrop-blur-glass {
+    backdrop-filter: none !important;
+    background-color: #FFFFFF !important;
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Print specific styles for Escrow Label */
+@media print {
+  header, footer, nav, button {
+    display: none !important;
+  }
+  body {
+    background: #FFFFFF !important;
+    color: #000000 !important;
+  }
+}
